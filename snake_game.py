@@ -23,16 +23,19 @@ class Snake:
         self.head = turtle.Turtle()
         self.head.speed(0)
         self.head.shape("square")
-        self.head.color("#2ecc71")  # Verde brillante para la cabeza
+        self.head.color("#2ecc71")  # Verde claro para distinguir la cabeza
         self.head.penup()
         self.head.goto(0, 0)
         self.direction = "stop"
         
-        # Bloqueo para evitar múltiples cambios de dirección en un solo frame
+        # Bloqueo para evitar giros dobles en un mismo frame
         self.direction_locked = False
 
         # 4.2 Cuerpo / Segmentos (Snake Body)
         self.segments = []
+        
+        # Guarda la última posición libre de la cola antes de avanzar (t-1)
+        self.last_tail_pos = (0, 0)
 
     # 3.3 Prevención de Giros Inválidos (180°)
     def go_up(self):
@@ -56,31 +59,33 @@ class Snake:
             self.direction_locked = True
 
     def add_segment(self):
-        """Instancia un nuevo segmento y lo agrega al final de la colección."""
+        """
+        Crea un nuevo segmento en la posición donde estaba la cola 
+        antes de dar el último paso, evitando que nazca sobre la cabeza.
+        """
         new_segment = turtle.Turtle()
         new_segment.speed(0)
         new_segment.shape("square")
-        new_segment.color("#27ae60")  # Verde ligeramente más oscuro para el cuerpo
+        new_segment.color("#27ae60")  # Verde cuerpo
         new_segment.penup()
-        
-        # Posicionar inicialmente en las coordenadas de la cola o de la cabeza
-        if self.segments:
-            tail_x, tail_y = self.segments[-1].xcor(), self.segments[-1].ycor()
-        else:
-            tail_x, tail_y = self.head.xcor(), self.head.ycor()
-            
-        new_segment.goto(tail_x, tail_y)
+        new_segment.goto(self.last_tail_pos[0], self.last_tail_pos[1])
         self.segments.append(new_segment)
 
     # 5.1 Algoritmo de Movimiento Inverso
     def move(self):
+        # Guardar la posición de la cola (o cabeza si no hay cuerpo) en t-1
+        if self.segments:
+            self.last_tail_pos = (self.segments[-1].xcor(), self.segments[-1].ycor())
+        else:
+            self.last_tail_pos = (self.head.xcor(), self.head.ycor())
+
         # 1. Propagar movimiento desde la cola (N-1) hasta el segmento 1
         for i in range(len(self.segments) - 1, 0, -1):
             prev_x = self.segments[i - 1].xcor()
             prev_y = self.segments[i - 1].ycor()
             self.segments[i].goto(prev_x, prev_y)
 
-        # 2. Mover el primer segmento (índice 0) a la posición actual de la cabeza
+        # 2. Mover el primer segmento (índice 0) a la posición de la cabeza (t-1)
         if len(self.segments) > 0:
             self.segments[0].goto(self.head.xcor(), self.head.ycor())
 
@@ -94,11 +99,11 @@ class Snake:
         elif self.direction == "right":
             self.head.setx(self.head.xcor() + GRID_SIZE)
 
-        # Desbloquear el cambio de dirección para el siguiente frame
+        # Liberar bloqueo de dirección tras completar el movimiento
         self.direction_locked = False
 
     def get_all_positions(self):
-        """Devuelve un conjunto con las coordenadas (x, y) ocupadas por toda la serpiente."""
+        """Devuelve un conjunto con las coordenadas (x, y) ocupadas por la serpiente."""
         positions = {(round(self.head.xcor()), round(self.head.ycor()))}
         for seg in self.segments:
             positions.add((round(seg.xcor()), round(seg.ycor())))
@@ -110,9 +115,10 @@ class Snake:
         self.direction = "stop"
         self.direction_locked = False
         for seg in self.segments:
-            seg.goto(1000, 1000)  # Mover fuera de la pantalla
+            seg.goto(1000, 1000)
             seg.hideturtle()
         self.segments.clear()
+        self.last_tail_pos = (0, 0)
 
 
 # =====================================================================
@@ -123,15 +129,12 @@ class Food(turtle.Turtle):
         super().__init__()
         self.speed(0)
         self.shape("circle")
-        self.color("#e74c3c")  # Rojo para la fruta
+        self.color("#e74c3c")  # Círculo rojo
         self.penup()
         self.relocate(set())
 
     def relocate(self, occupied_positions):
-        """
-        Genera coordenadas en [-280, 280] en pasos múltiplos exactos de 20 px,
-        validando que no colisionen con la serpiente.
-        """
+        """Ubica la comida en la grilla [-280, 280] fuera del cuerpo de la serpiente."""
         while True:
             x = random.randrange(-280, 281, GRID_SIZE)
             y = random.randrange(-280, 281, GRID_SIZE)
@@ -178,13 +181,12 @@ class Scoreboard(turtle.Turtle):
 # =====================================================================
 class GameEngine:
     def __init__(self):
-        # Inicialización de la pantalla
         self.screen = turtle.Screen()
         self.screen.title("Snake - Python Turtle")
-        self.screen.bgcolor("#1e272e")  # Gris oscuro / pizarra para buen contraste
+        self.screen.bgcolor("#1e272e")
         self.screen.setup(width=SCREEN_WIDTH, height=SCREEN_HEIGHT)
         
-        # 3.1 Control del Renderizado: Desactivar auto-dibujado
+        # 3.1 Desactivar auto-dibujado
         self.screen.tracer(0)
 
         # Instanciar entidades
@@ -193,26 +195,21 @@ class GameEngine:
         self.food.relocate(self.snake.get_all_positions())
         self.scoreboard = Scoreboard()
 
-        # Variables de estado y temporizador
         self.delay = INITIAL_DELAY
-        self.state = "RUNNING"  # Estados soportados: RUNNING, PAUSED
+        self.state = "RUNNING"
 
-        # Configurar controles
         self._setup_controls()
 
     def _setup_controls(self):
         self.screen.listen()
-        # Controles con flechas de dirección
         self.screen.onkey(self.snake.go_up, "Up")
         self.screen.onkey(self.snake.go_down, "Down")
         self.screen.onkey(self.snake.go_left, "Left")
         self.screen.onkey(self.snake.go_right, "Right")
-        # Controles con WASD
         self.screen.onkey(self.snake.go_up, "w")
         self.screen.onkey(self.snake.go_down, "s")
         self.screen.onkey(self.snake.go_left, "a")
         self.screen.onkey(self.snake.go_right, "d")
-        # Tecla de Pausa
         self.screen.onkey(self.toggle_pause, "space")
 
     def toggle_pause(self):
@@ -224,47 +221,46 @@ class GameEngine:
             self.scoreboard.update_display()
 
     def trigger_game_over(self):
-        """5.2.B / 5.2.C Rutina de fin de juego y reinicio de tablero."""
+        """Reinicia la partida tras chocar con bordes o con el cuerpo."""
         self.snake.reset()
         self.scoreboard.reset_score()
         self.delay = INITIAL_DELAY
         self.food.relocate(self.snake.get_all_positions())
 
-    # 6. Diagrama de Flujo del Ciclo de Ejecución
+    # 6. Ciclo de Ejecución Principal
     def game_loop(self):
         try:
             if self.state == "RUNNING" and self.snake.direction != "stop":
-                # 1. Mover segmentos del cuerpo y cabeza
+                # 1. Mover segmentos y cabeza
                 self.snake.move()
 
-                # 2. ¿Colisión con Comida? (distancia < GRID_SIZE)
+                # 2. ¿Colisión con Comida?
                 if self.snake.head.distance(self.food) < GRID_SIZE:
                     self.snake.add_segment()
                     self.food.relocate(self.snake.get_all_positions())
                     self.scoreboard.increase_score()
                     self.delay = max(MIN_DELAY, self.delay - DELAY_REDUCTION)
 
-                # 3. ¿Colisión con Bordes? (|x| > LIMIT_X o |y| > LIMIT_Y)
+                # 3. ¿Colisión con Bordes?
                 head_x = self.snake.head.xcor()
                 head_y = self.snake.head.ycor()
                 if abs(head_x) > LIMIT_X or abs(head_y) > LIMIT_Y:
                     self.trigger_game_over()
 
-                # 4. ¿Colisión con el Propio Cuerpo? (distancia < 10)
+                # 4. ¿Colisión con el Propio Cuerpo?
                 else:
                     for segment in self.snake.segments:
                         if self.snake.head.distance(segment) < 10:
                             self.trigger_game_over()
                             break
 
-            # 5. Renderizado manual en pantalla
+            # 5. Actualizar pantalla
             self.screen.update()
 
-            # 6. Programar siguiente frame asíncrono (3.2 ontimer vs while True)
+            # 6. Programar siguiente iteración
             self.screen.ontimer(self.game_loop, self.delay)
 
         except (turtle.Terminator, Exception):
-            # 7.2 Manejo seguro del cierre de ventana
             pass
 
     def run(self):
@@ -272,9 +268,6 @@ class GameEngine:
         self.screen.mainloop()
 
 
-# =====================================================================
-# PUNTO DE ENTRADA (main)
-# =====================================================================
 if __name__ == "__main__":
     try:
         game = GameEngine()
